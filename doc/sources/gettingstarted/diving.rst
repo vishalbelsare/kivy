@@ -3,8 +3,9 @@ Diving in
 
 To get straight into kivy, take a look at :doc:`/index`.
 
-Kivy comes with a set of :doc:`examples` in the ``kivy_installation/examples``
-directory. You should try modifying/improving/adapting them to your needs.
+Kivy comes with a set of :doc:`examples` (`Gallery of Examples <../examples/gallery.html>`_)
+in the ``kivy_installation/examples`` directory. You should try
+modifying/improving/adapting them to your needs.
 
 Browse our `wiki <https://github.com/kivy/kivy/wiki>`_ for info on related
 projects, tutorials and snippets.
@@ -23,4 +24,4 @@ Learn how to handle custom :doc:`/api-kivy.input`.
 Familiarize yourself with the :mod:`Kivy Framework <kivy>`.
 
 Kivy is open source, so you can **contribute**. Take a look at the
-:doc:`/contribute` section for guidelines.
+`our latest Contribution Guide <https://github.com/kivy/kivy/blob/master/CONTRIBUTING.md>`_.

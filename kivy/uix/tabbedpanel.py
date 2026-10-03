@@ -125,7 +125,6 @@ __all__ = ('StripLayout', 'TabbedPanel', 'TabbedPanelContent',
 
 from functools import partial
 from kivy.clock import Clock
-from kivy.compat import string_types
 from kivy.factory import Factory
 from kivy.uix.togglebutton import ToggleButton
 from kivy.uix.widget import Widget
@@ -163,13 +162,19 @@ class TabbedPanelHeader(ToggleButton):
 
     # only allow selecting the tab if not already selected
     def on_touch_down(self, touch):
-        if self.state == 'down':
+        if self.activated:
             # dispatch to children, not to self
             for child in self.children:
                 child.dispatch('on_touch_down', touch)
             return
         else:
             super(TabbedPanelHeader, self).on_touch_down(touch)
+
+    def on_touch_up(self, touch):
+        if not self.collide_point(*touch.pos):
+            self.activated = True
+            self.parent.tabbed_panel.current_tab.activated = True
+        super(TabbedPanelHeader, self).on_touch_up(touch)
 
     def on_release(self, *largs):
         # Tabbed panel header is a child of tab_strib which has a
@@ -368,6 +373,28 @@ class TabbedPanel(GridLayout):
     defaults to 100.
     '''
 
+    bar_width = NumericProperty('2dp')
+    '''Width of the horizontal scroll bar. The width is interpreted
+    as a height for the horizontal bar.
+
+    .. versionadded:: 2.2.0
+
+    :attr:`bar_width` is a :class:`~kivy.properties.NumericProperty` and
+    defaults to 2.
+    '''
+
+    scroll_type = OptionProperty(['content'], options=(['content'], ['bars'],
+                                 ['bars', 'content'], ['content', 'bars']))
+
+    '''Sets the type of scrolling to use for the content of the scrollview.
+    Available options are: ['content'], ['bars'], ['bars', 'content'].
+
+    .. versionadded:: 2.2.0
+
+    :attr:`scroll_type` is an :class:`~kivy.properties.OptionProperty` and
+    defaults to ['content'].
+    '''
+
     do_default_tab = BooleanProperty(True)
     '''Specifies whether a default_tab head is provided.
 
@@ -438,7 +465,7 @@ class TabbedPanel(GridLayout):
         self.remove_widget(oltab)
         self._original_tab = None
         self.switch_to(new_tab)
-        new_tab.state = 'down'
+        new_tab.activated = True
 
     default_tab = AliasProperty(get_def_tab, set_def_tab,
                                 bind=('_default_tab', ))
@@ -446,7 +473,7 @@ class TabbedPanel(GridLayout):
 
     .. Note:: For convenience, the automatically provided default tab is
               deleted when you change default_tab to something else.
-              As of 1.5.0, this behaviour has been extended to every
+              As of 1.5.0, this behavior has been extended to every
               `default_tab` for consistency and not just the automatically
               provided one.
 
@@ -456,8 +483,8 @@ class TabbedPanel(GridLayout):
     def get_def_tab_content(self):
         return self.default_tab.content
 
-    def set_def_tab_content(self, *l):
-        self.default_tab.content = l[0]
+    def set_def_tab_content(self, *args):
+        self.default_tab.content = args[0]
 
     default_tab_content = AliasProperty(get_def_tab_content,
                                         set_def_tab_content)
@@ -508,8 +535,8 @@ class TabbedPanel(GridLayout):
         for full example.
         '''
         header_content = header.content
-        self._current_tab.state = 'normal'
-        header.state = 'down'
+        self._current_tab.activated = False
+        header.activated = True
         self._current_tab = header
         self.clear_widgets()
         if header_content is None:
@@ -524,7 +551,7 @@ class TabbedPanel(GridLayout):
             tabs = self._tab_strip
             tabs.parent.scroll_to(header)
 
-    def clear_tabs(self, *l):
+    def clear_tabs(self, *args):
         self_tabs = self._tab_strip
         self_tabs.clear_widgets()
         if self.do_default_tab:
@@ -564,7 +591,7 @@ class TabbedPanel(GridLayout):
                 self_tabs = self._tab_strip
                 self_tabs.width -= widget.width
                 self_tabs.remove_widget(widget)
-                if widget.state == 'down' and self.do_default_tab:
+                if widget.activated and self.do_default_tab:
                     self._default_tab.on_release()
                 self._reposition_tabs()
             else:
@@ -598,24 +625,24 @@ class TabbedPanel(GridLayout):
                 self._switch_to_first_tab()
                 self._default_tab = self._current_tab
         else:
-            self._current_tab.state = 'normal'
+            self._current_tab.activated = False
             self._setup_default_tab()
 
     def on_default_tab_text(self, *args):
         self._default_tab.text = self.default_tab_text
 
-    def on_tab_width(self, *l):
+    def on_tab_width(self, *args):
         ev = self._update_tab_ev
         if ev is None:
             ev = self._update_tab_ev = Clock.create_trigger(
                 self._update_tab_width, 0)
         ev()
 
-    def on_tab_height(self, *l):
+    def on_tab_height(self, *args):
         self._tab_layout.height = self._tab_strip.height = self.tab_height
         self._reposition_tabs()
 
-    def on_tab_pos(self, *l):
+    def on_tab_pos(self, *args):
         # ensure canvas
         self._reposition_tabs()
 
@@ -626,7 +653,7 @@ class TabbedPanel(GridLayout):
         _tabs = self._tab_strip
         cls = self.default_tab_cls
 
-        if isinstance(cls, string_types):
+        if isinstance(cls, str):
             cls = Factory.get(cls)
 
         if not issubclass(cls, TabbedPanelHeader):
@@ -643,7 +670,7 @@ class TabbedPanel(GridLayout):
 
         default_tab.height = self.tab_height
         default_tab.group = '__tab%r__' % _tabs.uid
-        default_tab.state = 'down'
+        default_tab.activated = True
         default_tab.width = self.tab_width if self.tab_width else 100
         default_tab.content = content
 
@@ -658,7 +685,7 @@ class TabbedPanel(GridLayout):
             Clock.schedule_once(self._load_default_tab_content)
         self._current_tab = default_tab
 
-    def _switch_to_first_tab(self, *l):
+    def _switch_to_first_tab(self, *args):
         ltl = len(self.tab_list) - 1
         if ltl > -1:
             self._current_tab = dt = self._original_tab \
@@ -669,14 +696,14 @@ class TabbedPanel(GridLayout):
         if self.default_tab:
             self.switch_to(self.default_tab)
 
-    def _reposition_tabs(self, *l):
+    def _reposition_tabs(self, *args):
         ev = self._update_tabs_ev
         if ev is None:
             ev = self._update_tabs_ev = Clock.create_trigger(
                 self._update_tabs, 0)
         ev()
 
-    def _update_tabs(self, *l):
+    def _update_tabs(self, *args):
         self_content = self.content
         if not self_content:
             return
@@ -684,7 +711,9 @@ class TabbedPanel(GridLayout):
         tab_pos = self.tab_pos
         tab_layout = self._tab_layout
         tab_layout.clear_widgets()
-        scrl_v = ScrollView(size_hint=(None, 1), always_overscroll=False)
+        scrl_v = ScrollView(size_hint=(None, 1), always_overscroll=False,
+                            bar_width=self.bar_width,
+                            scroll_type=self.scroll_type)
         tabs = self._tab_strip
         parent = tabs.parent
         if parent:
@@ -805,7 +834,7 @@ class TabbedPanel(GridLayout):
         for widg in widget_list:
             add(widg)
 
-    def _update_tab_width(self, *l):
+    def _update_tab_width(self, *args):
         if self.tab_width:
             for tab in self.tab_list:
                 tab.size_hint_x = 1
@@ -840,7 +869,7 @@ class TabbedPanel(GridLayout):
         else:
             sctr.top = self.top - (self.height - scrl_v_width) / 2
 
-    def _update_scrollview(self, scrl_v, *l):
+    def _update_scrollview(self, scrl_v, *args):
         self_tab_pos = self.tab_pos
         self_tabs = self._tab_strip
         if self_tab_pos[0] == 'b' or self_tab_pos[0] == 't':

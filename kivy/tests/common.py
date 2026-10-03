@@ -10,6 +10,8 @@ The screenshots live in the 'kivy/tests/results' folder and are in PNG format,
 320x240 pixels.
 '''
 
+from __future__ import annotations
+
 __all__ = (
     'GraphicUnitTest', 'UnitTestTouch', 'UTMotionEvent', 'async_run',
     'requires_graphics', 'ensure_web_server')
@@ -21,6 +23,7 @@ import sys
 from functools import partial
 import os
 import threading
+from typing import Callable, Optional
 from kivy.graphics.cgl import cgl_get_backend_name
 from kivy.input.motionevent import MotionEvent
 log = logging.getLogger('unittest')
@@ -36,6 +39,54 @@ make_screenshots = os.environ.get('KIVY_UNITTEST_SCREENSHOTS')
 http_server = None
 http_server_ready = threading.Event()
 kivy_eventloop = os.environ.get('KIVY_EVENTLOOP', 'asyncio')
+
+
+def advance_frames(frames: int) -> None:
+    """Let Kivy draw a specific number of frames.
+
+    Generally more useful than ``time.sleep``, since the duration of a frame
+    can vary widely based on things not in your app's control.
+
+    """
+    from kivy.base import EventLoop
+
+    for _ in range(frames):
+        EventLoop.idle()
+
+
+def idle_until(
+        condition: Optional[Callable[[], bool]] = None,
+        timeout: Optional[int] = None,
+        message: Optional[str] = None
+) -> partial | None:
+    """Advance frames until ``condition()`` is ``True``
+
+    With integer ``timeout``, give up after that many frames,
+    raising ``TimeoutError``. You can customize its ``message``.
+
+    May be used as a decorator upon the condition function.
+
+    """
+    from kivy.base import EventLoop
+
+    if not (timeout or condition):
+        raise ValueError("Need timeout or condition")
+    if condition is None:
+        return partial(idle_until, timeout=timeout, message=message)
+    if timeout is None:
+        while not condition():
+            EventLoop.idle()
+        return
+    for _ in range(timeout):
+        if condition():
+            return
+        EventLoop.idle()
+    if message is None:
+        if hasattr(condition, "__name__"):
+            message = f"{condition.__name__} timed out"
+        else:
+            message = "Timed out"
+    raise TimeoutError(message)
 
 
 def requires_graphics(func):
@@ -74,7 +125,7 @@ def ensure_web_server(root=None):
             http_server.server_activate()
             http_server_ready.set()
             http_server.serve_forever()
-        except:
+        except Exception:
             import traceback
             traceback.print_exc()
         finally:
@@ -162,8 +213,23 @@ class GraphicUnitTest(_base):
         Window.create_window()
         Window.register()
         Window.initialized = True
-        Window.canvas.clear()
-        Window.close = lambda *s: True
+        Window.close = lambda *s: None
+        self.clear_window_and_event_loop()
+
+    def clear_window_and_event_loop(self):
+        from kivy.base import EventLoop
+        window = self.Window
+        for child in window.children[:]:
+            window.remove_widget(child)
+        window.canvas.before.clear()
+        window.canvas.clear()
+        window.canvas.after.clear()
+        EventLoop.touches.clear()
+        for post_proc in EventLoop.postproc_modules:
+            if hasattr(post_proc, 'touches'):
+                post_proc.touches.clear()
+            elif hasattr(post_proc, 'last_touches'):
+                post_proc.last_touches.clear()
 
     def on_window_flip(self, window):
         '''Internal method to be called when the window have just displayed an
@@ -289,7 +355,7 @@ class GraphicUnitTest(_base):
             try:
                 if reffn != tmpfn:
                     unlink(tmpfn)
-            except:
+            except Exception:
                 pass
             EventLoop.stop()
 
@@ -299,10 +365,10 @@ class GraphicUnitTest(_base):
         '''
         from kivy.base import stopTouchApp
         from kivy.core.window import Window
-        from kivy.clock import Clock
         Window.unbind(on_flip=self.on_window_flip)
+        self.clear_window_and_event_loop()
+        self.Window = None
         stopTouchApp()
-
         if not fake and self.test_failed:
             self.assertTrue(False)
         super(GraphicUnitTest, self).tearDown()
@@ -412,18 +478,20 @@ class UnitTestTouch(MotionEvent):
         '''Create a MotionEvent instance with X and Y of the first
         position a touch is at.
         '''
-
         from kivy.base import EventLoop
         self.eventloop = EventLoop
         win = EventLoop.window
-
         super(UnitTestTouch, self).__init__(
             # device, (tuio) id, args
             self.__class__.__name__, 99, {
                 "x": x / (win.width - 1.0),
                 "y": y / (win.height - 1.0),
-            }
+            },
+            is_touch=True,
+            type_id='touch'
         )
+        # set profile to accept x, y and pos properties
+        self.profile = ['pos']
 
     def touch_down(self, *args):
         self.eventloop.post_dispatch_input("begin", self)
@@ -440,27 +508,27 @@ class UnitTestTouch(MotionEvent):
         self.eventloop.post_dispatch_input("end", self)
 
     def depack(self, args):
-        # set MotionEvent to touch
-        self.is_touch = True
-
         # set sx/sy properties to ratio (e.g. X / win.width)
         self.sx = args['x']
         self.sy = args['y']
+        # run depack after we set the values
+        super().depack(args)
 
-        # set profile to accept x, y and pos properties
+
+# https://gist.github.com/tito/f111b6916aa6a4ed0851
+# subclass for touch event in unit test
+class UTMotionEvent(MotionEvent):
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('is_touch', True)
+        kwargs.setdefault('type_id', 'touch')
+        super().__init__(*args, **kwargs)
         self.profile = ['pos']
 
-        # run depack after we set the values
-        super(UnitTestTouch, self).depack(args)
-
-
-class UTMotionEvent(MotionEvent):
     def depack(self, args):
-        self.is_touch = True
         self.sx = args['x']
         self.sy = args['y']
-        self.profile = ['pos']
-        super(UTMotionEvent, self).depack(args)
+        super().depack(args)
 
 
 def async_run(func=None, app_cls_func=None):
@@ -481,6 +549,9 @@ def async_run(func=None, app_cls_func=None):
         if kivy_eventloop == 'asyncio':
             try:
                 import pytest_asyncio
+                # In pytest 9, marks on fixtures have no effect.
+                # We only need to mark the async test function,
+                # not turn it into a fixture.
                 return pytest.mark.asyncio(func)
             except ImportError:
                 return pytest.mark.skip(

@@ -59,13 +59,13 @@ black window which you won't be able to interact with. Instead, you need to
 Scheduling a repetitive event
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-You can call a function or a method every X times per second using
+You can call a function or a method at specified intervals using
 :meth:`~kivy.clock.Clock.schedule_interval`. Here is an example of calling a
-function named my_callback 30 times per second::
+function named my_callback every 1/30th of a second (i.e. 30 times per second)::
 
     def my_callback(dt):
         print('My callback is called', dt)
-    event = Clock.schedule_interval(my_callback, 1 / 30.)
+    event = Clock.schedule_interval(my_callback, 1 / 30)
 
 You have multiple ways of unscheduling a previously scheduled event. One, is
 to use :meth:`~kivy.clock.ClockEvent.cancel` or :meth:`~kivy.clock.Clock.unschedule`::
@@ -87,7 +87,7 @@ unscheduled::
             print('Last call of my callback, bye bye !')
             return False
         print('My callback is called')
-    Clock.schedule_interval(my_callback, 1 / 30.)
+    Clock.schedule_interval(my_callback, 1 / 30)
 
 
 Scheduling a one-time event
@@ -121,10 +121,11 @@ inside the callback itself::
         Clock.schedule_once(my_callback, 1)
     Clock.schedule_once(my_callback, 1)
 
-While the main loop will try to keep to the schedule as requested, there is some
-uncertainty as to when exactly a scheduled callback will be called. Sometimes
-another callback or some other task in the application will take longer than
-anticipated and thus the timing can be a little off.
+.. warning::
+    While the main loop will try to keep to the schedule as requested, there is some
+    uncertainty as to when exactly a scheduled callback will be called. Sometimes
+    another callback or some other task in the application will take longer than
+    anticipated and thus the timing can be a little off.
 
 In the latter solution to the repetitive callback problem, the next iteration will
 be called at least one second after the last iteration ends. With
@@ -134,12 +135,12 @@ every second.
 Trigger events
 ~~~~~~~~~~~~~~
 
-Sometimes you may want to schedule a function to be called only once for the next 
+Sometimes you may want to schedule a function to be called only once for the next
 frame, preventing duplicate calls. You might be tempted to achieve that like so::
 
     # First, schedule once.
     event = Clock.schedule_once(my_callback, 0)
-    
+
     # Then, in another place you will have to unschedule first
     # to avoid duplicate call. Then you can schedule again.
     Clock.unschedule(event)

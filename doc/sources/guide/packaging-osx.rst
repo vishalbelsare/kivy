@@ -1,12 +1,12 @@
 .. _packaging-osx:
 
-Creating packages for OS X
+Creating packages for macOS
 ==========================
 
 .. note::
 
     This guide describes multiple ways for packaging Kivy applications.
-    Packaging with PyInstaller is recommended for general use.
+    Packaging using the Kivy SDK is recommended for general use.
 
 .. _packaging-osx-sdk:
 
@@ -19,14 +19,10 @@ Using the Kivy SDK
 
 .. note::
 
-    Kivy.app is built on the `current GitHub Action macOS version (10.15)
-    <https://github.com/actions/virtual-environments#available-environments>`_ and will typically
-    not work on older OS X versions. For older OS X versions, you need to build Kivy.app
-    on the oldest machine you wish to support. See below.
+    Kivy.app is built with ``MACOSX_DEPLOYMENT_TARGET=10.9``.
 
-For OS X 10.15+ and later, we provide a Kivy DMG with all dependencies
-bundled in a **virtual environment**, including a Python interpreter that can be used as
-a base to package kivy apps.
+We provide a Kivy DMG with all dependencies bundled in a **virtual environment**,
+including a Python interpreter that can be used as a base to package kivy apps.
 
 This is the safest approach because it packages the binaries without references to
 any binaries on the system on which the app is packaged. Because all references are
@@ -37,17 +33,51 @@ You can find complete instructions to build and package apps with Kivy.app, star
 with Kivy.app or building from scratch, in the readme
 of the `kivy-sdk-packager repo <https://github.com/kivy/kivy-sdk-packager/tree/master/osx>`_.
 
+
+.. _osx_kivy-sdk-packager:
+
+Using Buildozer
+---------------
+
+    pip install git+http://github.com/kivy/buildozer
+    cd /to/where/I/Want/to/package
+    buildozer init
+
+Edit the buildozer.spec and add the details for your app.
+Dependencies can be added to the `requirements=` section.
+
+By default the kivy version specified in the requirements is ignored.
+
+If you have a Kivy.app at /Applications/Kivy.app then that is used,
+for packaging. Otherwise the latest build from kivy.org using Kivy
+master will be downloaded and used.
+
+When you're ready to package your macOS app just run::
+
+    buildozer osx debug
+
+Once the app is packaged, you might want to remove unneeded
+packages, just reduce the package to its minimal state that
+is needed for the app to run.
+
+That's it. Enjoy!
+
+Buildozer right now uses the Kivy SDK to package your app.
+If you want to control more details about your app than buildozer
+currently offers then you can use the SDK directly, as detailed in the
+section below.
+
 .. _osx_pyinstaller:
 
 Using PyInstaller and Homebrew
 ------------------------------
 .. note::
 
-    Package your app on the oldest OS X version you want to support.
+    Package your app on the oldest macOS version you want to support.
 
 Complete guide
 ~~~~~~~~~~~~~~
-#. Install `Homebrew <http://brew.sh>`_
+#. Install `Homebrew <https://brew.sh>`_
 #. Install Python::
 
     $ brew install python
@@ -59,7 +89,7 @@ Complete guide
 #. (Re)install your dependencies with ``--build-from-source`` to make sure they can
    be used on other machines::
 
-    $ brew reinstall --build-from-source sdl2 sdl2_image sdl2_ttf sdl2_mixer
+    $ brew reinstall --build-from-source sdl3 sdl3_image sdl3_ttf sdl3_mixer
 
    .. note::
        If your project depends on GStreamer or other additional libraries
@@ -160,7 +190,7 @@ Once you have kivy and its deps installed, you need to install PyInstaller.
 Let's assume we use a folder like `testpackaging`::
 
     cd testpackaging
-    git clone http://github.com/pyinstaller/pyinstaller
+    git clone https://github.com/pyinstaller/pyinstaller
 
 Create a file named touchtracer.spec in this directory and add the following
 code to it::
@@ -190,7 +220,7 @@ code to it::
               upx=True,
               console=False )
     coll = COLLECT(exe, Tree('../kivy/examples/demo/touchtracer/'),
-                   Tree('/Library/Frameworks/SDL2_ttf.framework/Versions/A/Frameworks/FreeType.framework'),
+                   Tree('/Library/Frameworks/SDL3_ttf.framework/Versions/A/Frameworks/FreeType.framework'),
                    a.binaries,
                    a.zipfiles,
                    a.datas,
@@ -216,49 +246,3 @@ Then run the following command::
 
 Replace `touchtracer` with your app where appropriate.
 This will give you a <yourapp>.app in the dist/ folder.
-
-
-.. _osx_kivy-sdk-packager:
-
-Using Buildozer
----------------
-
-    pip install git+http://github.com/kivy/buildozer
-    cd /to/where/I/Want/to/package
-    buildozer init
-
-.. note::
-    Packaging Kivy applications with the following method must be done inside
-    OS X, 32-bit platforms are no longer supported.
-
-Edit the buildozer.spec and add the details for your app.
-Dependencies can be added to the `requirements=` section.
-
-By default the kivy version specified in the requirements is ignored.
-
-If you have a Kivy.app at /Applications/Kivy.app then that is used,
-for packaging. Otherwise the latest build from kivy.org using Kivy
-master will be downloaded and used.
-
-If you want to package for python 3.x.x simply download the package
-named Kivy3.7z from the download section of kivy.org and extract it
-to Kivy.app in /Applications, then run::
-
-    buildozer osx debug
-
-Once the app is packaged, you might want to remove unneeded
-packages like gstreamer, if you don't need video support.
-Same logic applies for other things you do not use, just reduce
-the package to its minimal state that is needed for the app to run.
-
-As an example we are including the showcase example packaged using
-this method for both Python 2 (9.xMB) and 3 (15.xMB), you can find the
-packages here:
-https://drive.google.com/drive/folders/0B1WO07-OL50_alFzSXJUajBFdnc .
-
-That's it. Enjoy!
-
-Buildozer right now uses the Kivy SDK to package your app.
-If you want to control more details about your app than buildozer
-currently offers then you can use the SDK directly, as detailed in the
-section below.

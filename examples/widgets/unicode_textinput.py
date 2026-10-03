@@ -41,7 +41,7 @@ Builder.load_string('''
             background_color: .8811, .8811, .8811, 1
             foreground_color: 0, 0, 0, 1
             font_name: fnt_spnr.font_name
-            font_size: fntsz_spnr.text + 'sp'
+            font_size: sp(fntsz_spnr.text or 0)
             text: root.unicode_string
             size_hint: 1, None
             height: self.minimum_height
@@ -158,7 +158,7 @@ German:         Der schnelle braune Fuchs springt über den faulen alten Hund.
 Greek:          Η γρήγορη καφέ αλεπού πηδάει πάνω από το τεμπέλικο
                 γέρικο σκυλί.
 Gujrati:        આ ઝડપી ભુરો શિયાળ તે બેકાર જૂના કૂતરા પર કૂદકા.
-Gurmukhi:       ਤੇਜ ਭੂਰੇ ਰੰਗ ਦੀ ਲੂੰਬੜੀ ਆਲਸੀ ਬੁੱਢੇ ਕੁੱਤੇ ਦੇ ਉਤੋਂ ਦੀ ਟੱਪਦੀ ਹੈ ।
+Gurmukhi:       ਤੇਜ ਭੂਰੇ ਰੰਗ ਦੀ ਲੋਮੜੀ ਆਲਸੀ ਬੁੱਢੇ ਕੁੱਤੇ ਦੇ ਉਤੋਂ ਦੀ ਟੱਪਦੀ ਹੈ ।
 Hiation Creole: Rapid mawon Rena a so sou chen an parese fin vye granmoun.
 Hebrew:         השועל החום הזריז קופץ על הכלב הישן עצלן.
 Hindi:          तेज भूरे रंग की लोमड़ी आलसी बूढ़े कुत्ते के उपर से कूदती है ॥

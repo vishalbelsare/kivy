@@ -40,13 +40,12 @@ from kivy.logger import Logger
 from kivy.clock import Clock
 from kivy.cache import Cache
 from kivy.core.image import ImageLoader, Image
-from kivy.compat import PY2, string_types
 from kivy.config import Config
-from kivy.utils import platform
+from kivy.utils import platform, path_to_str
 
 from collections import deque
 from time import sleep
-from os.path import join
+from os.path import join, normcase, normpath
 from os import write, close, unlink, environ
 import threading
 import mimetypes
@@ -54,6 +53,22 @@ import mimetypes
 
 # Register a cache for loader
 Cache.register('kv.loader', limit=500, timeout=60)
+
+
+def _loader_cache_key(filename):
+    # Build a normalized ``kv.loader`` cache/identity key for ``filename``.
+
+    # Local filesystem paths are normalized (separators, redundant
+    # ``.``/``..`` segments and case on case-insensitive platforms) so that
+    # different spellings of the same file share a single loader entry and are
+    # not fetched twice. URLs and URIs (anything containing ``://`` or starting
+    # with ``data:``) are returned verbatim, since ``normpath`` would mangle
+    # their scheme separators.
+    if not filename:
+        return filename
+    if '://' in filename or filename.startswith('data:'):
+        return filename
+    return normcase(normpath(filename))
 
 
 class ProxyImage(Image):
@@ -124,10 +139,6 @@ class LoaderBase(object):
         self._start_wanted = False
         self._trigger_update = Clock.create_trigger(self._update)
 
-        if platform in ['android', 'ios']:
-            import certifi
-            environ.setdefault('SSL_CERT_FILE', certifi.where())
-
     def __del__(self):
         if self._trigger_update is not None:
             self._trigger_update.cancel()
@@ -150,7 +161,7 @@ class LoaderBase(object):
 
     The default value is 2 for giving a smooth user experience. You could
     increase the number of workers, then all the images will be loaded faster,
-    but the user will not been able to use the application while loading.
+    but the user will not be able to use the application while loading.
     Prior to 1.6.0, the default number was 20, and loading many full-hd images
     was completely blocking the application.
 
@@ -191,7 +202,7 @@ class LoaderBase(object):
         return self._loading_image
 
     def _set_loading_image(self, image):
-        if isinstance(image, string_types):
+        if isinstance(image, str):
             self._loading_image = ImageLoader.load(filename=image)
         else:
             self._loading_image = image
@@ -214,7 +225,7 @@ class LoaderBase(object):
         return self._error_image
 
     def _set_error_image(self, image):
-        if isinstance(image, string_types):
+        if isinstance(image, str):
             self._error_image = ImageLoader.load(filename=image)
         else:
             self._error_image = image
@@ -277,24 +288,25 @@ class LoaderBase(object):
         self._wait_for_resume()
 
         filename = kwargs['filename']
+        key = kwargs['key']
         load_callback = kwargs['load_callback']
         post_callback = kwargs['post_callback']
         try:
             proto = filename.split(':', 1)[0]
-        except:
+        except Exception:
             # if blank filename then return
             return
         if load_callback is not None:
             data = load_callback(filename)
         elif proto in ('http', 'https', 'ftp', 'smb'):
-            data = self._load_urllib(filename, kwargs['kwargs'])
+            data = self._load_urllib(filename, key, kwargs['kwargs'])
         else:
             data = self._load_local(filename, kwargs['kwargs'])
 
         if post_callback:
             data = post_callback(data)
 
-        self._q_done.appendleft((filename, data))
+        self._q_done.appendleft((key, data))
         self._trigger_update()
 
     def _load_local(self, filename, kwargs):
@@ -303,19 +315,12 @@ class LoaderBase(object):
         # we might be unable to recreate the texture afterwise.
         return ImageLoader.load(filename, keep_data=True, **kwargs)
 
-    def _load_urllib(self, filename, kwargs):
+    def _load_urllib(self, filename, key, kwargs):
         '''(internal) Loading a network file. First download it, save it to a
         temporary file, and pass it to _load_local().'''
-        if PY2:
-            import urllib2 as urllib_request
+        import urllib.request
+        import tempfile
 
-            def gettype(info):
-                return info.gettype()
-        else:
-            import urllib.request as urllib_request
-
-            def gettype(info):
-                return info.get_content_type()
         proto = filename.split(':', 1)[0]
         if proto == 'smb':
             try:
@@ -326,29 +331,38 @@ class LoaderBase(object):
                 Logger.warning(
                     'Loader: can not load PySMB: make sure it is installed')
                 return
-        import tempfile
+
         data = fd = _out_osfd = None
         try:
             _out_filename = ''
 
             if proto == 'smb':
                 # read from samba shares
-                fd = urllib_request.build_opener(SMBHandler).open(filename)
+                fd = urllib.request.build_opener(SMBHandler).open(filename)
             else:
                 # read from internet
-                request = urllib_request.Request(filename)
+                request = urllib.request.Request(filename)
                 if Config.has_option('network', 'useragent'):
                     useragent = Config.get('network', 'useragent')
                     if useragent:
                         request.add_header('User-Agent', useragent)
-                opener = urllib_request.build_opener()
-                fd = opener.open(request)
+
+                # A custom context is only needed on Android and iOS
+                # as we need to use the certs provided via certifi.
+                ssl_ctx = None
+                if platform in {'android', 'ios'}:
+                    import certifi
+                    import ssl
+                    ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+                    ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+
+                fd = urllib.request.urlopen(request, context=ssl_ctx)
 
             if '#.' in filename:
                 # allow extension override from URL fragment
                 suffix = '.' + filename.split('#.')[-1]
             else:
-                ctype = gettype(fd.info())
+                ctype = fd.info().get_content_type()
                 suffix = mimetypes.guess_extension(ctype)
                 suffix = LoaderBase.EXT_ALIAS.get(suffix, suffix)
                 if not suffix:
@@ -388,13 +402,13 @@ class LoaderBase(object):
                 pass
 
             # update client
-            for c_filename, client in self._client[:]:
-                if filename != c_filename:
+            for c_key, client in self._client[:]:
+                if key != c_key:
                     continue
                 # got one client to update
                 client.image = self.error_image
                 client.dispatch('on_error', error=ex)
-                self._client.remove((c_filename, client))
+                self._client.remove((c_key, client))
 
             return self.error_image
         finally:
@@ -422,24 +436,24 @@ class LoaderBase(object):
 
         for x in range(self.max_upload_per_frame):
             try:
-                filename, data = self._q_done.pop()
+                key, data = self._q_done.pop()
             except IndexError:
                 return
 
             # create the image
             image = data  # ProxyImage(data)
             if not image.nocache:
-                Cache.append('kv.loader', filename, image)
+                Cache.append('kv.loader', key, image)
 
             # update client
-            for c_filename, client in self._client[:]:
-                if filename != c_filename:
+            for c_key, client in self._client[:]:
+                if key != c_key:
                     continue
                 # got one client to update
                 client.image = image
                 client.loaded = True
                 client.dispatch('on_load')
-                self._client.remove((c_filename, client))
+                self._client.remove((c_key, client))
 
         self._trigger_update()
 
@@ -466,8 +480,19 @@ class LoaderBase(object):
             TestApp().run()
 
         In order to cancel all background loading, call *Loader.stop()*.
+
+        .. versionchanged:: 3.0.0
+            `filename` may be a :class:`os.PathLike` (e.g. :class:`pathlib.Path`)
+            in addition to a ``str``. The loader cache is keyed on a normalized
+            form of `filename`, so different spellings of the same local file
+            share a single entry and are only fetched once.
         '''
-        data = Cache.get('kv.loader', filename)
+        # Coerce os.PathLike -> str, then derive a normalized cache/identity key
+        # while keeping the raw filename as the source that is actually loaded
+        # (URLs and case-sensitive paths must not be rewritten).
+        filename = path_to_str(filename)
+        key = _loader_cache_key(filename)
+        data = Cache.get('kv.loader', key)
         if data not in (None, False):
             # found image, if data is not here, need to reload.
             return ProxyImage(data,
@@ -476,17 +501,18 @@ class LoaderBase(object):
 
         client = ProxyImage(self.loading_image,
                             loading_image=self.loading_image, **kwargs)
-        self._client.append((filename, client))
+        self._client.append((key, client))
 
         if data is None:
             # if data is None, this is really the first time
             self._q_load.appendleft({
                 'filename': filename,
+                'key': key,
                 'load_callback': load_callback,
                 'post_callback': post_callback,
                 'kwargs': kwargs})
             if not kwargs.get('nocache', False):
-                Cache.append('kv.loader', filename, False)
+                Cache.append('kv.loader', key, False)
             self._start_wanted = True
             self._trigger_update()
         else:
@@ -496,7 +522,7 @@ class LoaderBase(object):
         return client
 
     def remove_from_cache(self, filename):
-        Cache.remove('kv.loader', filename)
+        Cache.remove('kv.loader', _loader_cache_key(path_to_str(filename)))
 
 #
 # Loader implementation
@@ -509,11 +535,7 @@ if 'KIVY_DOC' in environ:
 
 else:
 
-    #
-    # Try to use pygame as our first choice for loader
-    #
-
-    from kivy.compat import queue
+    import queue
     from threading import Thread
 
     class _Worker(Thread):
@@ -573,7 +595,7 @@ else:
             while self._running:
                 try:
                     parameters = self._q_load.pop()
-                except:
+                except Exception:
                     return
                 self.pool.add_task(self._load, parameters)
 

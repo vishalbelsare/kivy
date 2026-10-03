@@ -12,7 +12,7 @@ compile ffmpeg using the shared flags while disabling the static flags (you'll
 probably have to set the fPIC flag, e.g. CFLAGS=-fPIC). Here are some
 instructions: https://trac.ffmpeg.org/wiki/CompilationGuide. For Windows, you
 can download compiled GPL binaries from http://ffmpeg.zeranoe.com/builds/.
-Similarly, you should download SDL2.
+Similarly, you should download SDL3.
 
 Now, you should have ffmpeg and sdl directories. In each, you should have an
 'include', 'bin' and 'lib' directory, where e.g. for Windows, 'lib' contains
@@ -20,7 +20,7 @@ the .dll.a files, while 'bin' contains the actual dlls. The 'include' directory
 holds the headers. The 'bin' directory is only needed if the shared libraries
 are not already in the path. In the environment, define FFMPEG_ROOT and
 SDL_ROOT, each pointing to the ffmpeg and SDL directories respectively. (If
-you're using SDL2, the 'include' directory will contain an 'SDL2' directory,
+you're using SDL3, the 'include' directory will contain an 'SDL3' directory,
 which then holds the headers).
 
 Once defined, download the ffpyplayer git repo and run
@@ -49,7 +49,7 @@ try:
     import ffpyplayer
     from ffpyplayer.player import MediaPlayer
     from ffpyplayer.tools import set_log_callback, get_log_callback
-except:
+except Exception:
     raise
 
 
@@ -114,6 +114,14 @@ class VideoFFPy(VideoBase):
         self._trigger = Clock.create_trigger(self._redraw)
 
         super(VideoFFPy, self).__init__(**kwargs)
+
+    @property
+    def _is_stream(self):
+        # This is only used when building ff_opts, to prevent starting
+        # player paused and can probably be removed as soon as the 'eof'
+        # receiving issue is solved.
+        # See https://github.com/matham/ffpyplayer/issues/142
+        return self.filename.startswith('rtsp://')
 
     def __del__(self):
         self.unload()
@@ -211,7 +219,7 @@ class VideoFFPy(VideoBase):
                 self._texture = fbo.texture
             else:
                 self._texture = Texture.create(size=self._size,
-                                                colorfmt='rgba')
+                                               colorfmt='rgba')
 
             # XXX FIXME
             # self.texture.add_reload_observer(self.reload_buffer)
@@ -250,21 +258,12 @@ class VideoFFPy(VideoBase):
                 wait_for_wakeup(0.005)
                 continue
 
-            if src_pix_fmt == 'yuv420p':
+            # ffpyplayer reports src_pix_fmt as bytes. this may or may not
+            # change in future, so we check for both bytes and str
+            if src_pix_fmt in (b'yuv420p', 'yuv420p'):
                 self._out_fmt = 'yuv420p'
                 ffplayer.set_output_pix_fmt(self._out_fmt)
             break
-
-        if self._ffplayer_need_quit:
-            ffplayer.close_player()
-            return
-
-        # wait until loaded or failed, shouldn't take long, but just to make
-        # sure metadata is available.
-        while not self._ffplayer_need_quit:
-            if ffplayer.get_metadata()['src_vid_size'] != (0, 0):
-                break
-            wait_for_wakeup(0.005)
 
         if self._ffplayer_need_quit:
             ffplayer.close_player()
@@ -389,9 +388,13 @@ class VideoFFPy(VideoBase):
         # load first unloads
         self.load()
         self._out_fmt = 'rgba'
-        # it starts internally paused, but unpauses itself
+        # if no stream, it starts internally paused, but unpauses itself
+        # if stream and we start paused, we sometimes receive eof after a
+        # few frames, depending on the stream producer.
+        # XXX: This probably needs to be figured out in ffpyplayer, using
+        #      ffplay directly works.
         ff_opts = {
-            'paused': True,
+            'paused': not self._is_stream,
             'out_fmt': self._out_fmt,
             'sn': True,
             'volume': self._volume,

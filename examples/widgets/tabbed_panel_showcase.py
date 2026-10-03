@@ -216,7 +216,7 @@ Builder.load_string('''
             orientation: 'vertical'
             Image:
                 source: 'sequenced_images/data/images/info.png'\
-                    if tph.state == 'normal' else 'cityCC0.png'
+                    if not tph.activated else 'cityCC0.png'
             Label:
                 text: 'text & img'
     TabbedPanelHeader:
@@ -234,10 +234,9 @@ Builder.load_string('''
             Image:
                 id: img
                 source: 'sequenced_images/data/images/info.png'\
-                    if my_header.state == 'normal' else 'cityCC0.png'
+                    if my_header.activated else 'cityCC0.png'
                 size: my_header.size
-                allow_stretch: True
-                keep_ratio: False
+                fit_mode: "fill"
 ''')
 
 

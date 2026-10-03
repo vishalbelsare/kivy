@@ -46,7 +46,7 @@ Rule context
 
 A Kv source constitutes of `rules` which are used to describe the content
 of a Widget. You can have one `root` rule, and any number of `class` or
-`template` rules.
+`dynamic class` rules.
 
 The `root` rule is declared by declaring the class of your root widget, without
 any indentation, followed by `:` and will be set as the `root` attribute of the
@@ -67,7 +67,7 @@ four spaces per level, like the Python style guide
 There are three keywords specific to the Kv language:
 
 - `app`: always refers to the instance of your application.
-- `root`: refers to the base widget/template in the current rule
+- `root`: refers to the base widget in the current rule
 - `self`: always refer to the current widget
 
 Special syntax
@@ -397,7 +397,7 @@ Consider the code below:
         Button:
 
 Instead of having to repeat the same values for every button, we can just use a
-template instead, like so:
+dynamic class instead, like so:
 
 .. code-block:: kv
 
@@ -475,7 +475,7 @@ Designing with the Kivy Language
 One of the aims of the Kivy language is to
 `separate the concerns <https://en.wikipedia.org/wiki/Separation_of_concerns>`_
 of presentation and logic. The presentation (layout) side is addressed by your
-kv file and the logic by your .py file.
+``.kv`` file and the logic by your ``.py`` file.
 
 The code goes in py files
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -506,7 +506,6 @@ what files are loaded is described in the :meth:`kivy.app.App.load_kv` method.
 
 .. literalinclude:: ../../../examples/guide/designwithkv/controller.kv
     :language: kv
-    :linenos:
 
 One label and one button in a vertical ``BoxLayout``. Seems very simple. There
 are 3 things going on here:
@@ -543,5 +542,4 @@ that the ``Button`` and ``Label`` will show up and respond to our touch events.
 More documentation
 ------------------
 For a full description of the different components of the `KV` language,
- advanced usage and limitations, see the documentation
- for :mod:`~kivy.lang`
+advanced usage and limitations, see the documentation for :mod:`~kivy.lang`

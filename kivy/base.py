@@ -236,13 +236,20 @@ class EventLoopBase(EventDispatcher):
             self.postproc_modules.remove(mod)
 
     def remove_android_splash(self, *args):
-        '''Remove android presplash in SDL2 bootstrap.'''
+        '''Let the Android bootstrap dismiss its boot splash, now that the
+        first frame has been drawn.
+
+        A bootstrap with no splash to dismiss is not an error and warns nothing;
+        the backend treats the absence as the no-op it is.  The ImportError here
+        covers only the case this method should never have reached — no Android
+        platform backend at all.
+        '''
         try:
-            from android import remove_presplash
+            from kivy.mobile._platform.android import remove_presplash
             remove_presplash()
         except ImportError:
             Logger.warning(
-                'Base: Failed to import "android" module. '
+                'Base: Failed to import the android platform backend. '
                 'Could not remove android presplash.')
             return
 
@@ -262,6 +269,9 @@ class EventLoopBase(EventDispatcher):
             for listener in self.event_listeners:
                 listener.dispatch('on_motion', etype, me)
         # dispatch grabbed touch
+        if not me.is_touch:
+            # Non-touch event must be handled by the event manager
+            return
         me.grab_state = True
         for weak_widget in me.grab_list[:]:
             # weak_widget is a weak reference to widget

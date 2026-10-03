@@ -4,7 +4,6 @@
 	.. toctree::
 		:maxdepth: 2
 
-		gettingstarted/index
 		examples/index
 
 .. toctree::
@@ -15,4 +14,4 @@
     guide-index
     tutorials-index
     api-index
-
+    migration

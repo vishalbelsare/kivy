@@ -7,33 +7,43 @@ env:
 
 jobs:
   PEP8_test:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python 3.x
-      uses: actions/setup-python@v2
+    - uses: actions/checkout@v7
+    - name: Set up Python 3
+      uses: actions/setup-python@v7
       with:
-        python-version: 3.9
+        python-version: 3.14
+    - name: Install CI/CD Python requirements
+      run: |
+        python -m pip install -r .ci/cicd-requirements.txt
     - name: Validate PEP8
       run: |
-        source .ci/ubuntu_ci.sh
-        validate_pep8
+        make style
 
   unit_test:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: [ '3.13', '3.14' ]
     env:
       DISPLAY: ':99.0'
+      # TODO: Only run tests on 3.14 once "ffpyplayer" works with Python 3.14
+      KIVY_TEST_AUDIO: ${{ matrix.python == '3.14' && '0' || '1' }}
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python 3.x
-      uses: actions/setup-python@v2
+    - uses: actions/checkout@v7
+    - name: Set up Python 3
+      uses: actions/setup-python@v7
       with:
-        python-version: 3.9
+        python-version: ${{ matrix.python }}
+    - name: Install CI/CD Python requirements
+      run: |
+        python -m pip install -r .ci/cicd-requirements.txt
     - name: Install dependencies
       run: |
         source .ci/ubuntu_ci.sh
-        install_kivy_test_run_apt_deps
-        install_kivy_test_run_pip_deps
+        install_ubuntu_build_deps
+        ./tools/build_linux_dependencies.sh
     - name: Setup env
       run: |
         source .ci/ubuntu_ci.sh
@@ -41,6 +51,7 @@ jobs:
     - name: Install Kivy
       run: |
         source .ci/ubuntu_ci.sh
+        export KIVY_DEPS_ROOT=$(pwd)/kivy-dependencies
         install_kivy
     - name: Test Kivy
       run: |
@@ -48,48 +59,42 @@ jobs:
         test_kivy
     - name: Coveralls upload
       if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-      env:
-        COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
-      run: |
-        source .ci/ubuntu_ci.sh
-        upload_coveralls
+      uses: coverallsapp/github-action@v2
     - name: Test Kivy benchmarks
       run: |
         source .ci/ubuntu_ci.sh
         test_kivy_benchmark
-    - name: Upload benchamrks as artifact
-      uses: actions/upload-artifact@v2
+    - name: Upload benchmarks as artifact
+      uses: actions/upload-artifact@v7
       with:
-        name: benchmarks
+        name: benchmarks-ubuntu-unittests-python-3.x
         path: .benchmarks-kivy
 
   gen_docs:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python 3.x
-      uses: actions/setup-python@v2
+    - uses: actions/checkout@v7
+    - name: Set up Python 3
+      uses: actions/setup-python@v7
       with:
-        python-version: 3.9
+        python-version: 3.14
     - name: Install dependencies
       run: |
         source .ci/ubuntu_ci.sh
-        install_kivy_test_run_apt_deps
-        install_kivy_test_run_pip_deps
-    - name: Setup env
-      run: |
-        source .ci/ubuntu_ci.sh
-        prepare_env_for_unittest
+        install_ubuntu_build_deps
+        ./tools/build_linux_dependencies.sh
+
+    # Note: Removed prepare_env_for_unittest as it's already tested before gen_docs
     - name: Install Kivy
       run: |
         source .ci/ubuntu_ci.sh
-        install_kivy
+        install_kivy docs
     - name: Generate docs
       run: |
         source .ci/ubuntu_ci.sh
         generate_docs
     - name: Upload docs as artifact
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v7
       with:
         name: docs
         path: doc/build/html

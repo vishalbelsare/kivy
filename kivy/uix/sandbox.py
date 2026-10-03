@@ -107,6 +107,7 @@ class Sandbox(FloatLayout):
         traceback.print_tb(_traceback)
         return True
 
+    on_motion = sandbox(Widget.on_motion)
     on_touch_down = sandbox(Widget.on_touch_down)
     on_touch_move = sandbox(Widget.on_touch_move)
     on_touch_up = sandbox(Widget.on_touch_up)
@@ -169,7 +170,7 @@ if __name__ == '__main__':
 <TestButton>:
     canvas:
         Color:
-            rgb: (.3, .2, 0) if self.state == 'normal' else (.7, .7, 0)
+            rgb: (.3, .2, 0) if self.pressed else (.7, .7, 0)
         Rectangle:
             pos: self.pos
             size: self.size

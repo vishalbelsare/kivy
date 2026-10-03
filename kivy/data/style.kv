@@ -9,9 +9,9 @@
             size: self.texture_size
             pos: int(self.center_x - self.texture_size[0] / 2.), int(self.center_y - self.texture_size[1] / 2.)
 
-<-Button,-ToggleButton>:
-    state_image: self.background_normal if self.state == 'normal' else self.background_down
-    disabled_image: self.background_disabled_normal if self.state == 'normal' else self.background_disabled_down
+<Button>:
+    state_image: self.background_down if self.pressed else self.background_normal
+    disabled_image: self.background_disabled_down if self.pressed else self.background_disabled_normal
     canvas:
         Color:
             rgba: self.background_color
@@ -27,18 +27,22 @@
             size: self.texture_size
             pos: int(self.center_x - self.texture_size[0] / 2.), int(self.center_y - self.texture_size[1] / 2.)
 
+<ToggleButton>:
+    state_image: self.background_down if self.activated else self.background_normal
+    disabled_image: self.background_disabled_down if self.activated else self.background_disabled_normal
+
 <BubbleContent>
     opacity: .7 if self.disabled else 1
-    rows: 1
+    orientation: "horizontal"
     canvas:
         Color:
-            rgba: self.parent.background_color if self.parent else (1, 1, 1, 1)
+            rgba: self.background_color
         BorderImage:
-            border: self.parent.border if self.parent else (16, 16, 16, 16)
-            texture: root.parent._bk_img.texture if root.parent else None
+            border: self.border
+            source: self.background_image
             size: self.size
             pos: self.pos
-            auto_scale: root.parent.border_auto_scale if self.parent else 'off'
+            auto_scale: self.border_auto_scale
 
 <BubbleButton>:
     background_normal: 'atlas://data/images/defaulttheme/bubble_btn'
@@ -72,8 +76,7 @@
         pos: (root.value_pos[0] - root.cursor_width / 2, root.center_y - root.cursor_height / 2) if root.orientation == 'horizontal' else (root.center_x - root.cursor_width / 2, root.value_pos[1] - root.cursor_height / 2)
         size: root.cursor_size
         source: root.cursor_disabled_image if root.disabled else root.cursor_image
-        allow_stretch: True
-        keep_ratio: False
+        fit_mode: "fill"
 
 <ProgressBar>:
     canvas:
@@ -98,7 +101,7 @@
     Image:
         pos: root.pos
         size: root.size
-        allow_stretch: True
+        fit_mode: "contain"
         source: 'atlas://data/images/defaulttheme/splitter_grip' + root.horizontal
 
 <Scatter>:
@@ -118,14 +121,24 @@
     canvas.after:
         PopMatrix
 
-<Image,AsyncImage>:
+<Image,AsyncImage,SvgWidget,AsyncSvgWidget,LottieWidget>:
     canvas:
         Color:
             rgba: self.color
+        StencilPush
+        Rectangle:
+            pos: self.pos
+            size: self.size
+        StencilUse
         Rectangle:
             texture: self.texture
             size: self.norm_image_size
             pos: self.center_x - self.norm_image_size[0] / 2., self.center_y - self.norm_image_size[1] / 2.
+        StencilUnUse
+        Rectangle:
+            pos: self.pos
+            size: self.size
+        StencilPop
 
 <EffectWidget>:
     canvas.before:
@@ -175,7 +188,7 @@
 
 <Selector>
     color: 148. / 255, 208 / 255., 230 / 255., 1
-    allow_stretch: True
+    fit_mode: "contain"
 
 <TextInput>:
     canvas.before:
@@ -199,6 +212,7 @@
             rgba: self.disabled_foreground_color if self.disabled else (self.hint_text_color if not self.text else self.foreground_color)
 
 <TextInputCutCopyPaste>:
+    content: content.__self__
     but_cut: cut.__self__
     but_copy: copy.__self__
     but_paste: paste.__self__
@@ -206,22 +220,24 @@
 
     size_hint: None, None
     size: '150sp', '50sp'
-    BubbleButton:
-        id: cut
-        text: 'Cut'
-        on_release: root.do('cut')
-    BubbleButton:
-        id: copy
-        text: 'Copy'
-        on_release: root.do('copy')
-    BubbleButton:
-        id: paste
-        text: 'Paste'
-        on_release: root.do('paste')
-    BubbleButton:
-        id: selectall
-        text: 'Select All'
-        on_release: root.do('selectall')
+    BubbleContent:
+        id: content
+        BubbleButton:
+            id: cut
+            text: 'Cut'
+            on_release: root.do('cut')
+        BubbleButton:
+            id: copy
+            text: 'Copy'
+            on_release: root.do('copy')
+        BubbleButton:
+            id: paste
+            text: 'Paste'
+            on_release: root.do('paste')
+        BubbleButton:
+            id: selectall
+            text: 'Select All'
+            on_release: root.do('selectall')
 
 <CodeInput>:
     font_name: 'data/fonts/RobotoMono-Regular.ttf'
@@ -326,23 +342,20 @@
         id: layout
         controller: root
 
-[FileListEntry@FloatLayout+TreeViewNode]:
-    locked: False
-    entries: []
-    path: ctx.path
+<FileListEntry>:
     # FIXME: is_selected is actually a read_only treeview property. In this
     # case, however, we're doing this because treeview only has single-selection
     # hardcoded in it. The fix to this would be to update treeview to allow
     # multiple selection.
-    is_selected: self.path in ctx.controller().selection
+    is_selected: root.path in root.controller().selection if root.controller else False
 
     orientation: 'horizontal'
     size_hint_y: None
     height: '48dp' if dp(1) > 1 else '24dp'
     # Don't allow expansion of the ../ node
-    is_leaf: not ctx.isdir or ctx.name.endswith('..' + ctx.sep) or self.locked
-    on_touch_down: self.collide_point(*args[1].pos) and ctx.controller().entry_touched(self, args[1])
-    on_touch_up: self.collide_point(*args[1].pos) and ctx.controller().entry_released(self, args[1])
+    is_leaf: not root.isdir or root.name.endswith('..' + root.sep) or self.locked
+    on_touch_down: self.collide_point(*args[1].pos) and root.controller and root.controller().entry_touched(self, args[1])
+    on_touch_up: self.collide_point(*args[1].pos) and root.controller and root.controller().entry_released(self, args[1])
     BoxLayout:
         pos: root.pos
         size_hint_x: None
@@ -352,14 +365,14 @@
             text_size: self.width, None
             halign: 'left'
             shorten: True
-            text: ctx.name
-            font_name: ctx.controller().font_name
+            text: root.name
+            font_name: root.controller().font_name if root.controller else ''
         Label:
             text_size: self.width, None
             size_hint_x: None
             halign: 'right'
-            text: '{}'.format(ctx.get_nice_size())
-            font_name: ctx.controller().font_name
+            text: root.get_nice_size()
+            font_name: root.controller().font_name if root.controller else ''
 
 <FileChooserIconLayout>:
     on_entry_added: stacklayout.add_widget(args[1])
@@ -390,14 +403,12 @@
         id: layout
         controller: root
 
-[FileIconEntry@Widget]:
-    locked: False
-    path: ctx.path
-    selected: self.path in ctx.controller().selection
+<FileIconEntry>:
+    selected: root.path in root.controller().selection if root.controller else False
     size_hint: None, None
 
-    on_touch_down: self.collide_point(*args[1].pos) and ctx.controller().entry_touched(self, args[1])
-    on_touch_up: self.collide_point(*args[1].pos) and ctx.controller().entry_released(self, args[1])
+    on_touch_down: self.collide_point(*args[1].pos) and root.controller and root.controller().entry_touched(self, args[1])
+    on_touch_up: self.collide_point(*args[1].pos) and root.controller and root.controller().entry_released(self, args[1])
     size: '100dp', '100dp'
 
     canvas:
@@ -411,19 +422,19 @@
 
     Image:
         size: '48dp', '48dp'
-        source: 'atlas://data/images/defaulttheme/filechooser_%s' % ('folder' if ctx.isdir else 'file')
+        source: 'atlas://data/images/defaulttheme/filechooser_%s' % ('folder' if root.isdir else 'file')
         pos: root.x + dp(24), root.y + dp(40)
     Label:
-        text: ctx.name
-        font_name: ctx.controller().font_name
+        text: root.name
+        font_name: root.controller().font_name if root.controller else ''
         text_size: (root.width, self.height)
         halign: 'center'
         shorten: True
         size: '100dp', '16dp'
         pos: root.x, root.y + dp(16)
     Label:
-        text: '{}'.format(ctx.get_nice_size())
-        font_name: ctx.controller().font_name
+        text: root.get_nice_size()
+        font_name: root.controller().font_name if root.controller else ''
         font_size: '11sp'
         color: .8, .8, .8, 1
         size: '100dp', '16sp'
@@ -601,7 +612,7 @@
     color: self.color[:3] + [0 if (root.icon and not root.inside_group) else 1]
 
     Image:
-        allow_stretch: True
+        fit_mode: "contain"
         opacity: 1 if (root.icon and not root.inside_group) else 0
         source: root.icon
         mipmap: root.mipmap
@@ -652,7 +663,7 @@
                     id: prev_icon_image
                     source: root.previous_image
                     opacity: 1 if root.with_previous else 0
-                    allow_stretch: True
+                    fit_mode: "contain"
                     size_hint_x: None
                     temp_width: root.previous_image_width or dp(prev_icon_image.texture_size[0])
                     temp_height: root.previous_image_height or dp(prev_icon_image.texture_size[1])
@@ -664,7 +675,7 @@
                 ActionPreviousImage:
                     id: app_icon_image
                     source: root.app_icon
-                    allow_stretch: True
+                    fit_mode: "contain"
                     size_hint_x: None
                     temp_width: root.app_icon_width or dp(app_icon_image.texture_size[0])
                     temp_height: root.app_icon_height or dp(app_icon_image.texture_size[1])
@@ -722,10 +733,10 @@
 # Accordion widget
 # =============================================================================
 
-[AccordionItemTitle@Label]:
-    text: ctx.title
-    normal_background: ctx.item.background_normal if ctx.item.collapse else ctx.item.background_selected
-    disabled_background: ctx.item.background_disabled_normal if ctx.item.collapse else ctx.item.background_disabled_selected
+<AccordionItemTitle>:
+    text: root.title
+    normal_background: (root.item.background_normal if root.item.collapse else root.item.background_selected) if root.item else ''
+    disabled_background: (root.item.background_disabled_normal if root.item.collapse else root.item.background_disabled_selected) if root.item else ''
     canvas.before:
         Color:
             rgba: self.disabled_color if self.disabled else self.color
@@ -737,7 +748,7 @@
         Translate:
             xy: self.center_x, self.center_y
         Rotate:
-            angle: 90 if ctx.item.orientation == 'horizontal' else 0
+            angle: 90 if root.item and root.item.orientation == 'horizontal' else 0
             axis: 0, 0, 1
         Translate:
             xy: -self.center_x, -self.center_y
@@ -846,12 +857,12 @@
                     rgba: (1,1,1,1.)
                 Line:
                     rectangle: self.x,self.y,self.width,self.height
-                Color: 
+                Color:
                     rgba: kivy.utils.get_color_from_hex(root.value) if root.value else (1,1,1,1.)
                 Rectangle:
                     pos: self.pos
-                    size: self.size 
-        
+                    size: self.size
+
         Label:
             text: root.value or ''
             pos: root.pos
@@ -868,6 +879,7 @@
         font_size: '15sp'
 
 <SettingTitle>:
+    text: self.title
     text_size: self.width - 32, None
     size_hint_y: None
     height: max(dp(20), self.texture_size[1] + dp(20))
@@ -1083,21 +1095,21 @@
             video: root
             width: '44dp'
             source: root.image_stop
-            allow_stretch: True
+            fit_mode: "contain"
 
         VideoPlayerPlayPause:
             size_hint_x: None
             video: root
             width: '44dp'
             source: root.image_pause if root.state == 'play' else root.image_play
-            allow_stretch: True
+            fit_mode: "contain"
 
         VideoPlayerVolume:
             video: root
             size_hint_x: None
             width: '44dp'
             source: root.image_volumehigh if root.volume > 0.8 else (root.image_volumemedium if root.volume > 0.4 else (root.image_volumelow if root.volume > 0 else root.image_volumemuted))
-            allow_stretch: True
+            fit_mode: "contain"
 
         Widget:
             size_hint_x: None
@@ -1119,16 +1131,16 @@
 <CheckBox>:
     _checkbox_state_image:
         self.background_checkbox_down \
-        if self.active else self.background_checkbox_normal
+        if self.activated else self.background_checkbox_normal
     _checkbox_disabled_image:
         self.background_checkbox_disabled_down \
-        if self.active else self.background_checkbox_disabled_normal
+        if self.activated else self.background_checkbox_disabled_normal
     _radio_state_image:
         self.background_radio_down \
-        if self.active else self.background_radio_normal
+        if self.activated else self.background_radio_normal
     _radio_disabled_image:
         self.background_radio_disabled_down \
-        if self.active else self.background_radio_disabled_normal
+        if self.activated else self.background_radio_disabled_normal
     _checkbox_image:
         self._checkbox_disabled_image \
         if self.disabled else self._checkbox_state_image
@@ -1164,8 +1176,16 @@
 # =============================================================================
 # Color Picker
 # =============================================================================
-<ColorPicker_Input@TextInput>
+
+<ColorHexInput>:
     multiline: False
+    input_filter: self._filter_hex
+    padding: sp(5)
+    border: 4, 9, 4, 9
+
+<ColorNumericInput>:
+    multiline: False
+    input_filter: self._filter_numeric
     mroot: None
     padding: sp(5)
     border: 4, 9, 4, 9
@@ -1192,13 +1212,16 @@
     AnchorLayout:
         size_hint_x: None
         width: '50sp'
-        ColorPicker_Input:
+        ColorNumericInput:
             mroot: root.mroot
             text: str(int(sldr.value))
             size_hint_y: None
             height: '28sp'
             on_text:
                 root.mroot._trigger_update_clr(root.mode, root.clr_idx, args[1])
+            on_focus:
+                # If focus is lost and text is empty, restore from slider value
+                if not args[1] and not self.text: self.text = str(int(sldr.value))
     Slider:
         id: sldr
         size_hint: 1, .25
@@ -1313,13 +1336,12 @@
                     text: 'X'
                     color: root.foreground_color
                 AnchorLayout:
-                    ColorPicker_Input:
+                    ColorHexInput:
+                        color_picker: root
                         size_hint_y: None
                         height: '28sp'
-                        mroot: root
                         text: str(root.hex_color)
                         on_text: root._trigger_update_hex(args[1])
-
 
         ColorWheel:
             id: wheel

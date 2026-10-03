@@ -145,6 +145,7 @@ from os.path import basename, dirname, join, splitext
 from kivy.event import EventDispatcher
 from kivy.logger import Logger
 from kivy.properties import AliasProperty, DictProperty, ListProperty
+from kivy.utils import path_to_str
 import os
 
 
@@ -183,7 +184,7 @@ class Atlas(EventDispatcher):
     '''
 
     def __init__(self, filename):
-        self._filename = filename
+        self._filename = path_to_str(filename)
         super(Atlas, self).__init__()
         self._load()
 
@@ -198,7 +199,7 @@ class Atlas(EventDispatcher):
 
         # must be a name finished by .atlas ?
         filename = self._filename
-        assert(filename.endswith('.atlas'))
+        assert filename.endswith('.atlas')
         filename = filename.replace('/', os.sep)
 
         Logger.debug('Atlas: Load <%s>' % filename)

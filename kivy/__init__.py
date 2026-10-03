@@ -31,12 +31,15 @@ __all__ = (
 import sys
 import shutil
 from getopt import getopt, GetoptError
-from os import environ, mkdir
+import os
+from os import environ, makedirs
 from os.path import dirname, join, basename, exists, expanduser
 import pkgutil
 import re
+import importlib
+from kivy.core import get_provider_options
 from kivy.logger import Logger, LOG_LEVELS
-from kivy.utils import platform
+from kivy.utils import platform, normalize_path_id
 from kivy._version import __version__, RELEASE as _KIVY_RELEASE, \
     _kivy_git_hash, _kivy_build_date
 
@@ -162,7 +165,10 @@ def kivy_register_post_configuration(callback):
 
 
 def kivy_usage():
-    '''Kivy Usage: %s [OPTION...]::
+    '''Kivy Usage: %s [KIVY OPTION...] [-- PROGRAM OPTIONS]::
+
+            Options placed after a '-- ' separator, will not be touched by kivy,
+            and instead passed to your program.
 
             Set KIVY_NO_ARGS=1 in your environment or before you import Kivy to
             disable Kivy's argument parser.
@@ -199,33 +205,30 @@ def kivy_usage():
     print(kivy_usage.__doc__ % (basename(sys.argv[0])))
 
 
-#: Global settings options for kivy
+#: Global settings options for kivy, see kivy.core for more details
 kivy_options = {
-    'window': ('egl_rpi', 'sdl2', 'pygame', 'sdl', 'x11'),
-    'text': ('pil', 'sdl2', 'pygame', 'sdlttf'),
-    'video': (
-        'gstplayer', 'ffmpeg', 'ffpyplayer', 'null'),
-    'audio': (
-        'gstplayer', 'pygame', 'ffpyplayer', 'sdl2',
-        'avplayer'),
-    'image': ('tex', 'imageio', 'dds', 'sdl2', 'pygame', 'pil', 'ffpy', 'gif'),
-    'camera': ('opencv', 'gi', 'avfoundation',
-               'android', 'picamera'),
-    'spelling': ('enchant', 'osxappkit', ),
-    'clipboard': (
-        'android', 'winctypes', 'xsel', 'xclip', 'dbusklipper', 'nspaste',
-        'sdl2', 'pygame', 'dummy', 'gtk3', )}
+    'window': get_provider_options('window'),
+    'text': get_provider_options('text'),
+    'video': get_provider_options('video'),
+    'audio_output': get_provider_options('audio_output'),
+    'image': get_provider_options('image'),
+    'camera': get_provider_options('camera'),
+    'spelling': get_provider_options('spelling'),
+    'clipboard': get_provider_options('clipboard'),
+    'svg': get_provider_options('svg'),
+    'lottie': get_provider_options('lottie'),
+}
 
 # Read environment
-for option in kivy_options:
+for option, value in kivy_options.items():
     key = 'KIVY_%s' % option.upper()
     if key in environ:
         try:
-            if type(kivy_options[option]) in (list, tuple):
+            if type(value) in {list, tuple}:
                 kivy_options[option] = environ[key].split(',')
             else:
                 kivy_options[option] = environ[key].lower() in \
-                    ('true', '1', 'yes')
+                    {'true', '1', 'yes'}
         except Exception:
             Logger.warning('Core: Wrong value for %s environment key' % key)
             Logger.exception('')
@@ -265,6 +268,22 @@ for examples_dir in (
         kivy_examples_dir = examples_dir
         break
 
+
+def _patch_mod_deps_win(dep_mod, mod_name):
+    import site
+    dep_bins = []
+
+    for d in [sys.prefix, site.USER_BASE]:
+        p = join(d, 'share', mod_name, 'bin')
+        if os.path.isdir(p):
+            os.environ["PATH"] = p + os.pathsep + os.environ["PATH"]
+            if hasattr(os, 'add_dll_directory'):
+                os.add_dll_directory(p)
+            dep_bins.append(p)
+
+    dep_mod.dep_bins = dep_bins
+
+
 # if there are deps, import them so they can do their magic.
 _packages = []
 try:
@@ -294,7 +313,9 @@ except ImportError:
 _logging_msgs = []
 for importer, modname, package in _packages:
     try:
-        mod = importer.find_module(modname).load_module(modname)
+        module_spec = importer.find_spec(modname)
+        mod = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(mod)
 
         version = ''
         if hasattr(mod, '__version__'):
@@ -302,6 +323,10 @@ for importer, modname, package in _packages:
         _logging_msgs.append(
             'deps: Successfully imported "{}.{}"{}'.
             format(package, modname, version))
+
+        if modname.startswith('gst') and version == '0.3.3':
+            _patch_mod_deps_win(mod, modname)
+
     except ImportError as e:
         Logger.warning(
             'deps: Error importing dependency "{}.{}": {}'.
@@ -314,36 +339,61 @@ if any(name in sys.argv[0] for name in (
     environ['KIVY_DOC'] = '1'
 if 'sphinx-build' in sys.argv[0]:
     environ['KIVY_DOC_INCLUDE'] = '1'
-if any(('nosetests' in arg or 'pytest' in arg) for arg in sys.argv):
+if any('pytest' in arg for arg in sys.argv):
     environ['KIVY_UNITTEST'] = '1'
 if any('pyinstaller' in arg.lower() for arg in sys.argv):
     environ['KIVY_PACKAGING'] = '1'
 
 if not environ.get('KIVY_DOC_INCLUDE'):
-    # Configuration management
-    if 'KIVY_HOME' in environ:
-        kivy_home_dir = expanduser(environ['KIVY_HOME'])
-    else:
-        user_home_dir = expanduser('~')
-        if platform == 'android':
-            user_home_dir = environ['ANDROID_APP_PATH']
-        elif platform == 'ios':
-            user_home_dir = join(expanduser('~'), 'Documents')
-        kivy_home_dir = join(user_home_dir, '.kivy')
+    user_home_dir = expanduser('~')
+    kivy_home_dir = None
 
+    # Configuration management
+    # Check for KIVY_DESKTOP_PATH_ID first on desktop platforms
+    if platform in {'win', 'macosx', 'linux'} and 'KIVY_DESKTOP_PATH_ID' in environ:
+        path_id = normalize_path_id(environ['KIVY_DESKTOP_PATH_ID'])
+
+        if platform == 'win':
+            base_dir = environ['APPDATA']
+        elif platform == 'macosx':
+            base_dir = expanduser('~/Library/Application Support')
+        else:  # linux
+            base_dir = expanduser(environ.get('XDG_DATA_HOME', '~/.local/share'))
+
+        kivy_home_dir = join(base_dir, path_id, '.kivy')
+    elif 'KIVY_HOME' in environ:
+        kivy_home_dir = expanduser(environ['KIVY_HOME'])
+    elif platform == 'android':
+        user_home_dir = environ['ANDROID_APP_PATH']
+    elif platform == 'ios':
+        user_home_dir = join(user_home_dir, 'Documents')
+    elif sys.prefix != sys.base_prefix:
+        # Detection if venv being used with the framework
+        user_home_dir = dirname(sys.prefix)
+
+    # Log warning if KIVY_DESKTOP_PATH_ID not set on desktop
+    if (platform in {'win', 'macosx', 'linux'} and
+            'KIVY_DESKTOP_PATH_ID' not in environ and
+            kivy_home_dir is None):
+        Logger.warning(
+            'Kivy: KIVY_DESKTOP_PATH_ID not set. If your application '
+            'targets desktop platforms, set it to provide a '
+            'user-friendly application name for directories. '
+            'See https://kivy.org/doc/stable/guide/environment.html'
+        )
+
+    kivy_home_dir = kivy_home_dir or join(user_home_dir, '.kivy')
     kivy_config_fn = join(kivy_home_dir, 'config.ini')
     kivy_usermodules_dir = join(kivy_home_dir, 'mods')
     icon_dir = join(kivy_home_dir, 'icon')
 
     if 'KIVY_NO_CONFIG' not in environ:
-        if not exists(kivy_home_dir):
-            mkdir(kivy_home_dir)
-        if not exists(kivy_usermodules_dir):
-            mkdir(kivy_usermodules_dir)
-        if not exists(icon_dir):
+        makedirs(kivy_home_dir, exist_ok=True)
+        makedirs(kivy_usermodules_dir, exist_ok=True)
+        if platform not in {'android', 'ios'} and not exists(icon_dir):
             try:
                 shutil.copytree(join(kivy_data_dir, 'logo'), icon_dir)
-            except:
+            except Exception:
                 Logger.exception('Error when copying logo directory')
 
     # configuration
@@ -379,7 +429,7 @@ if not environ.get('KIVY_DOC_INCLUDE'):
                 if opt == '--multiprocessing-fork':
                     mp_fork = True
                     break
-        except:
+        except Exception:
             pass
 
         # set argv to the non-read args
@@ -453,8 +503,8 @@ if not environ.get('KIVY_DOC_INCLUDE'):
 
     if need_save and 'KIVY_NO_CONFIG' not in environ:
         try:
-            with open(kivy_config_fn, 'w') as fd:
-                Config.write(fd)
+            Config.filename = kivy_config_fn
+            Config.write()
         except Exception as e:
             Logger.exception('Core: error while saving default'
                              'configuration file:', str(e))
@@ -465,15 +515,14 @@ if not environ.get('KIVY_DOC_INCLUDE'):
     from kivy.modules import Modules
     Modules.configure()
 
-    # android hooks: force fullscreen and add android touch input provider
-    if platform in ('android', 'ios'):
+    # mobile hooks: force fullscreen, and clear the input section. The
+    # providers configured there are desktop ones; on mobile SDL adds its own
+    # provider from the window instead (kivy/core/window/window_sdl3.py).
+    if platform in {'android', 'ios'}:
         from kivy.config import Config
         Config.set('graphics', 'fullscreen', 'auto')
         Config.remove_section('input')
         Config.add_section('input')
-
-    if platform == 'android':
-        Config.set('input', 'androidtouch', 'android')
 
 for msg in _logging_msgs:
     Logger.info(msg)
